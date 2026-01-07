@@ -31,30 +31,34 @@ import {
   Trash2,
   Palette,
   AlertTriangle,
-  CalendarDays
+  CalendarDays,
+  Check,
+  UserPlus
 } from 'lucide-react';
 import { ShiftType, DayShift, WeeklyStats, Tens, ShiftDefinition } from './types';
 import { INITIAL_TENS, SHIFT_DEFINITIONS, WORK_DAYS } from './constants';
 
+const COLOR_PRESETS = [
+  'bg-indigo-600', 'bg-emerald-500', 'bg-slate-500', 'bg-rose-500', 
+  'bg-amber-500', 'bg-sky-500', 'bg-violet-600', 'bg-fuchsia-500', 
+  'bg-orange-500', 'bg-cyan-500', 'bg-pink-500', 'bg-lime-500',
+  'bg-teal-500', 'bg-blue-700', 'bg-purple-700', 'bg-zinc-800'
+];
+
 const App: React.FC = () => {
-  // Check if we are in read-only mode via URL
   const queryParams = new URLSearchParams(window.location.search);
   const isReadOnly = queryParams.get('mode') === 'view';
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [shifts, setShifts] = useState<DayShift[]>([]);
   const [selectedTensId, setSelectedTensId] = useState<string | null>(null);
-  
-  // Track selected week for each TENS monitor card
   const [monitorWeeks, setMonitorWeeks] = useState<Record<string, number>>({});
 
-  // TENS list state
   const [tensList, setTensList] = useState<Tens[]>(() => {
     const saved = localStorage.getItem('tens_list');
     return saved ? JSON.parse(saved) : INITIAL_TENS;
   });
 
-  // Shift definitions state
   const [customShiftDefs, setCustomShiftDefs] = useState<Record<string, ShiftDefinition>>(() => {
     const saved = localStorage.getItem('shift_definitions');
     return saved ? JSON.parse(saved) : SHIFT_DEFINITIONS;
@@ -65,7 +69,6 @@ const App: React.FC = () => {
   const [editingTensList, setEditingTensList] = useState<Tens[]>([]);
   const [editingShifts, setEditingShifts] = useState<Record<string, ShiftDefinition>>({});
 
-  // Persist data
   useEffect(() => {
     localStorage.setItem('tens_list', JSON.stringify(tensList));
   }, [tensList]);
@@ -74,7 +77,6 @@ const App: React.FC = () => {
     localStorage.setItem('shift_definitions', JSON.stringify(customShiftDefs));
   }, [customShiftDefs]);
 
-  // Calculate days to display (Only current month)
   const monthDays = useMemo(() => {
     return eachDayOfInterval({
       start: startOfMonth(currentDate),
@@ -82,12 +84,12 @@ const App: React.FC = () => {
     });
   }, [currentDate]);
 
-  // Initialize/Update shifts for the displayed range
   useEffect(() => {
     const monthKey = format(currentDate, 'yyyy-MM');
     const existingInMonth = shifts.some(s => s.date.startsWith(monthKey));
     
-    if (!existingInMonth) {
+    // Auto-generate logic for Mon-Fri workdays if no shifts exist for the month
+    if (!existingInMonth && tensList.length > 0) {
       const newShifts: DayShift[] = [];
       monthDays.forEach((day) => {
         const dayOfWeek = day.getDay();
@@ -113,9 +115,8 @@ const App: React.FC = () => {
       });
       setShifts(prev => [...prev.filter(s => !s.date.startsWith(monthKey)), ...newShifts]);
     }
-  }, [currentDate, tensList.length, monthDays]);
+  }, [currentDate, tensList, monthDays]);
 
-  // Get all ISO weeks present in the current view
   const monthWeeks = useMemo(() => {
     const weeks = new Set<number>();
     monthDays.forEach(day => weeks.add(getISOWeek(day)));
@@ -126,14 +127,13 @@ const App: React.FC = () => {
     });
   }, [monthDays]);
 
-  // Set default selected week for monitor cards if not set
   useEffect(() => {
     const currentISO = getISOWeek(new Date());
     const initialWeeks: Record<string, number> = { ...monitorWeeks };
     let changed = false;
     tensList.forEach(t => {
       if (!initialWeeks[t.id]) {
-        initialWeeks[t.id] = monthWeeks.includes(currentISO) ? currentISO : monthWeeks[0];
+        initialWeeks[t.id] = monthWeeks.includes(currentISO) ? currentISO : (monthWeeks[0] || 1);
         changed = true;
       }
     });
@@ -187,6 +187,18 @@ const App: React.FC = () => {
     setIsShiftModalOpen(true);
   };
 
+  const handleAddTens = () => {
+    const newId = `TENS-${Date.now()}`;
+    setEditingTensList(prev => [
+      ...prev,
+      { id: newId, name: `TENS ${prev.length + 1}`, role: 'Enfermería' }
+    ]);
+  };
+
+  const handleRemoveTens = (id: string) => {
+    setEditingTensList(prev => prev.filter(t => t.id !== id));
+  };
+
   const shareLink = () => {
     const url = new URL(window.location.href);
     url.searchParams.set('mode', 'view');
@@ -203,6 +215,9 @@ const App: React.FC = () => {
 
   const addShiftType = () => {
     const newKey = `EXTRA_${Date.now()}`;
+    const usedColors = Object.values(editingShifts).map(d => d.color);
+    const availableColor = COLOR_PRESETS.find(c => !usedColors.includes(c)) || COLOR_PRESETS[0];
+    
     setEditingShifts(prev => ({
       ...prev,
       [newKey]: {
@@ -211,7 +226,7 @@ const App: React.FC = () => {
         hours: 8,
         startTime: '08:00',
         endTime: '16:00',
-        color: 'bg-slate-500'
+        color: availableColor
       }
     }));
   };
@@ -342,7 +357,7 @@ const App: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredTens.map((tens) => (
+                {filteredTens.length > 0 ? filteredTens.map((tens) => (
                   <tr key={tens.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
                     <td className="sticky left-0 bg-white group-hover:bg-slate-50 p-4 border-r font-medium text-slate-900 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
                       <div className="flex flex-col truncate">
@@ -384,7 +399,13 @@ const App: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )) : (
+                  <tr>
+                    <td colSpan={monthDays.length + 2} className="p-12 text-center text-slate-400 font-medium">
+                      No hay personal registrado. Pulsa el icono de personal para agregar.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -506,21 +527,56 @@ const App: React.FC = () => {
               <button onClick={() => setIsManageModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={24} /></button>
             </div>
             <div className="p-8 space-y-6 max-h-[60vh] overflow-y-auto">
-              {editingTensList.map((tens, idx) => (
-                <div key={tens.id} className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TENS #{idx+1}</label>
-                  <input 
-                    type="text" 
-                    value={tens.name} 
-                    onChange={(e) => setEditingTensList(prev => prev.map(t => t.id === tens.id ? {...t, name: e.target.value} : t))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                  />
-                </div>
-              ))}
+              <p className="text-sm text-slate-500 bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
+                Agrega o quita técnicos según las necesidades del servicio. Los turnos se recalcularán automáticamente al guardar.
+              </p>
+              
+              <div className="space-y-4">
+                {editingTensList.map((tens, idx) => (
+                  <div key={tens.id} className="group relative flex items-center gap-3">
+                    <div className="flex-1 space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TENS #{idx+1}</label>
+                      <input 
+                        type="text" 
+                        value={tens.name} 
+                        onChange={(e) => setEditingTensList(prev => prev.map(t => t.id === tens.id ? {...t, name: e.target.value} : t))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        placeholder="Nombre completo"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => handleRemoveTens(tens.id)}
+                      className="mt-6 text-slate-300 hover:text-rose-500 p-2 hover:bg-rose-50 rounded-xl transition-all"
+                      title="Eliminar TENS"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  </div>
+                ))}
+
+                <button 
+                  onClick={handleAddTens}
+                  className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 hover:text-indigo-500 hover:border-indigo-200 transition-all flex items-center justify-center gap-2 font-bold group"
+                >
+                  <UserPlus size={20} className="group-hover:scale-110 transition-transform" /> Agregar Técnico
+                </button>
+              </div>
             </div>
             <div className="p-8 bg-slate-50/50 flex gap-4">
               <button onClick={() => setIsManageModalOpen(false)} className="flex-1 px-6 py-3.5 rounded-2xl border border-slate-200 text-slate-600 font-bold hover:bg-white transition-all">Cancelar</button>
-              <button onClick={() => { setTensList(editingTensList); setIsManageModalOpen(false); }} className="flex-1 bg-indigo-600 px-6 py-3.5 rounded-2xl text-white font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all">Guardar</button>
+              <button 
+                onClick={() => { 
+                  setTensList(editingTensList); 
+                  setIsManageModalOpen(false); 
+                  // Reset selected filter if person removed
+                  if (selectedTensId && !editingTensList.some(t => t.id === selectedTensId)) {
+                    setSelectedTensId(null);
+                  }
+                }} 
+                className="flex-1 bg-indigo-600 px-6 py-3.5 rounded-2xl text-white font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+              >
+                Guardar Cambios
+              </button>
             </div>
           </div>
         </div>
@@ -529,53 +585,76 @@ const App: React.FC = () => {
       {/* Modal: Turnos */}
       {isShiftModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in duration-300">
             <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100 bg-slate-50/50">
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2"><Palette size={24} className="text-emerald-600" />Configuración de Turnos</h2>
               <button onClick={() => setIsShiftModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={24} /></button>
             </div>
-            <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
-              {(Object.entries(editingShifts) as [string, ShiftDefinition][]).map(([key, def]) => (
-                <div key={key} className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">DEFINICIÓN: {key}</span>
-                    <button onClick={() => removeShiftType(key)} className="text-rose-500 hover:bg-rose-50 p-2 rounded-xl transition-all"><Trash2 size={18} /></button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nombre del Turno</label>
-                      <input type="text" value={def.label} onChange={(e) => handleShiftDefChange(key, 'label', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
+            <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto">
+              <p className="text-sm text-slate-500 bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                Define aquí los tipos de turnos que usarás. El sistema permite crear múltiples tipos para una mejor organización visual.
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {(Object.entries(editingShifts) as [string, ShiftDefinition][]).map(([key, def]) => (
+                  <div key={key} className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-5 relative">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID: {key.substring(0,8)}</span>
+                      {key !== ShiftType.OFF && (
+                        <button onClick={() => removeShiftType(key)} className="text-rose-500 hover:bg-rose-50 p-2 rounded-xl transition-all"><Trash2 size={18} /></button>
+                      )}
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Horas Efectivas</label>
-                      <input type="number" step="0.5" value={def.hours} onChange={(e) => handleShiftDefChange(key, 'hours', parseFloat(e.target.value))} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Hora Inicio</label>
-                      <input type="text" value={def.startTime} onChange={(e) => handleShiftDefChange(key, 'startTime', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Hora Fin</label>
-                      <input type="text" value={def.endTime} onChange={(e) => handleShiftDefChange(key, 'endTime', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
-                    </div>
-                    <div className="sm:col-span-2 space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Color (Tailwind CSS)</label>
-                      <div className="flex gap-3 items-center">
-                        <input type="text" value={def.color} onChange={(e) => handleShiftDefChange(key, 'color', e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <div className={`w-10 h-10 rounded-xl ${def.color} border border-slate-300 shadow-inner`} />
+                    
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Etiqueta</label>
+                          <input type="text" value={def.label} onChange={(e) => handleShiftDefChange(key, 'label', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Horas</label>
+                          <input type="number" step="0.5" value={def.hours} onChange={(e) => handleShiftDefChange(key, 'hours', parseFloat(e.target.value))} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Color del Turno</label>
+                        <div className="flex flex-wrap gap-2">
+                          {COLOR_PRESETS.map(colorClass => (
+                            <button
+                              key={colorClass}
+                              onClick={() => handleShiftDefChange(key, 'color', colorClass)}
+                              className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-125 ${colorClass} ${def.color === colorClass ? 'ring-2 ring-offset-2 ring-slate-900' : ''}`}
+                            >
+                              {def.color === colorClass && <Check size={14} className="text-white" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Inicio</label>
+                          <input type="text" value={def.startTime} onChange={(e) => handleShiftDefChange(key, 'startTime', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Fin</label>
+                          <input type="text" value={def.endTime} onChange={(e) => handleShiftDefChange(key, 'endTime', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              <button onClick={addShiftType} className="w-full py-5 border-2 border-dashed border-slate-200 rounded-3xl text-slate-400 hover:text-indigo-500 hover:border-indigo-200 transition-all flex items-center justify-center gap-2 font-bold group">
-                <Plus size={24} /> Añadir Nuevo Turno
+                ))}
+              </div>
+
+              <button onClick={addShiftType} className="w-full py-6 border-2 border-dashed border-slate-200 rounded-3xl text-slate-400 hover:text-indigo-500 hover:border-indigo-200 transition-all flex items-center justify-center gap-2 font-bold group">
+                <Plus size={24} className="group-hover:scale-110 transition-transform" /> Añadir Nuevo Tipo de Turno
               </button>
             </div>
             <div className="p-8 bg-slate-50/50 flex gap-4">
               <button onClick={() => setIsShiftModalOpen(false)} className="flex-1 px-6 py-3.5 rounded-2xl border border-slate-200 text-slate-600 font-bold hover:bg-white transition-all">Cancelar</button>
               <button onClick={() => { setCustomShiftDefs(editingShifts); setIsShiftModalOpen(false); }} className="flex-1 bg-emerald-600 px-6 py-3.5 rounded-2xl text-white font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
-                <Save size={20} /> Aplicar
+                <Save size={20} /> Guardar Configuración
               </button>
             </div>
           </div>
