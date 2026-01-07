@@ -1,0 +1,5 @@
+{
+  "name": "Gestor de Turnos TENS 42 Horas",
+  "description": "Sistema de gestión y visualización de turnos para técnicos en enfermería ajustado a la ley de 42 horas semanales en Chile.",
+  "requestFramePermissions": []
+}
